@@ -1,0 +1,21 @@
+# Local interpreter/test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Personal state must never be published
+.env
+.env.*
+spotlight-ai.json
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.log
+*.bak
+*.backup*
+/backups/
+/screenshots/
+/local-evidence/
+/preview-scratch/
