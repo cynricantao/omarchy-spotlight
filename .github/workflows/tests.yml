@@ -1,0 +1,33 @@
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.14']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Test without personal state or AI credentials
+        env:
+          HOME: ${{ runner.temp }}/spotlight-home
+          XDG_CONFIG_HOME: ${{ runner.temp }}/spotlight-config
+          XDG_CACHE_HOME: ${{ runner.temp }}/spotlight-cache
+          XDG_DATA_HOME: ${{ runner.temp }}/spotlight-data
+          XDG_DATA_DIRS: ${{ runner.temp }}/spotlight-system-data
+          TMPDIR: ${{ runner.temp }}/spotlight-tmp
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_DATA_DIRS" "$TMPDIR"
+          python -B -W error::ResourceWarning -m unittest discover -p 'test_*.py' -v
+          node test_logic.cjs
