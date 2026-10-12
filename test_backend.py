@@ -78,11 +78,14 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(url.scheme, 'https')
         self.assertEqual(url.netloc, 'duckduckgo.com')
         self.assertEqual(parse_qs(url.query)['q'], [payload])
-        for action in b.query('> ')['items']:
+        for action in b.quick_actions():
+            if action['kind'] == 'menu':
+                with self.assertRaises(ValueError):
+                    b.action_argv(action)
+                continue
             self.assertEqual(action['kind'], 'action')
             argv = b.action_argv(action)
             self.assertNotIn(argv[0], ['sh', 'bash', 'sudo', 'rm', 'reboot'])
-        self.assertEqual(b.query('> screenshot')['items'][0]['value'], 'screenshot')
         with self.assertRaises(ValueError):
             b.action_argv({'kind': 'action', 'value': 'rm -rf /', 'id': 'action:home'})
         with self.assertRaises(ValueError):
@@ -371,15 +374,17 @@ class BackendTests(unittest.TestCase):
             self.assertFalse(any(x['value'].startswith(str(documents) + '/')
                                  for x in b.query('file keep')['items']))
 
-    def test_settings_action_is_curated_not_supplied_command(self):
+    def test_settings_navigation_is_native_not_a_stock_menu_fallback(self):
         b = load_backend()
-        choices = b.query('> settings')['items']
-        self.assertEqual(len(choices), 1)
-        self.assertEqual(b.action_argv(choices[0]), ['omarchy', 'menu', 'summon', 'setup'])
-        altered = dict(choices[0], command='rm -rf /', args=['shutdown'])
-        self.assertEqual(b.action_argv(altered), ['omarchy', 'menu', 'summon', 'setup'])
-        self.assertEqual({x['value'] for x in b.query('> ')['items']},
-                         {'home', 'settings', 'screenshot'})
+        choice = next(x for x in b.quick_actions() if x['value'] == 'root')
+        self.assertEqual(choice['kind'], 'menu')
+        with self.assertRaises(ValueError):
+            b.action_argv(choice)
+        with self.assertRaises(ValueError):
+            b.action_argv({'kind': 'action', 'id': 'action:settings', 'value': 'settings'})
+        home = b.quick_actions()[0]
+        self.assertEqual(b.action_argv(dict(home, command='rm -rf /', args=['shutdown'])),
+                         b.action_argv(home))
 
     def test_index_never_follows_symlinked_root_ancestors(self):
         b = load_backend()
@@ -403,7 +408,9 @@ class BackendTests(unittest.TestCase):
              patch.object(b.subprocess, 'Popen', side_effect=AssertionError('query must not launch')), \
              patch.object(b.subprocess, 'run', side_effect=AssertionError('query must not spawn')), \
              patch.object(socket, 'create_connection', side_effect=AssertionError('query must not network')):
-            for text in ['', 'hello', 'file hello', 'app ', '? what?', 'web search', '= 2+2', '> ']:
+            # Menu discovery separately evaluates trusted local visibility guards;
+            # it is covered by test_omarchy_menu, not this spawn-free search gate.
+            for text in ['', 'hello', 'file hello', 'app ', '? what?', 'web search', '= 2+2']:
                 self.assertEqual(b.query(text)['error'], '')
             self.assertFalse(cache.exists())
         home = root / 'home'

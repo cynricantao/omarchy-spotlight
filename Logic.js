@@ -8,6 +8,26 @@ function acceptResponse(response, currentQuery, opened) {
     return !!opened && !!response && typeof response.query === "string" && response.query === currentQuery;
 }
 
+function acceptMenuResponse(response, currentQuery, opened, currentMenu) {
+    return acceptResponse(response, currentQuery, opened) && response.menu === currentMenu;
+}
+
+function statusTooltipUseful(message, status) {
+    return !!message || (!!status && String(status).toLowerCase() !== "ready");
+}
+
+function menuTarget(entry) {
+    return entry && entry.kind === "menu" && typeof entry.value === "string" ? entry.value : "";
+}
+
+function confirmedSelection(entry, accepted) {
+    if (accepted !== true || !entry || entry.kind !== "menu-action" || entry.requiresConfirmation !== true) return null;
+    var result = {};
+    for (var key in entry) if (Object.prototype.hasOwnProperty.call(entry, key)) result[key] = entry[key];
+    result.confirmed = true;
+    return result;
+}
+
 function linkUrl(id) {
     var urls = {youtube:"https://www.youtube.com/", github:"https://github.com/", google:"https://www.google.com/"};
     return Object.prototype.hasOwnProperty.call(urls, id) ? urls[id] : "";
@@ -58,7 +78,7 @@ function sectionize(source, category) {
         {title:"Web", layout:"tiles", prefix:"web ", kinds:["web","link"]},
         {title:"AI", layout:"list", prefix:"? ", kinds:["ai"]},
         {title:"Calculate", layout:"list", prefix:"= ", kinds:["calculator","calc"]},
-        {title:"Actions", layout:"list", prefix:"> ", kinds:["action"]}
+        {title:"Actions", layout:"list", prefix:"> ", kinds:["action","menu","menu-action","menu-apps"]}
     ];
     for (var g=0; g<groups.length; g++) {
         var group = groups[g];

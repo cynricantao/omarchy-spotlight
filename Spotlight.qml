@@ -19,6 +19,11 @@ Item {
     property int selectedIndex: 0
     property string resultQuery: ""
     property string requestQuery: ""
+    property string menuId: "root"
+    property string requestMenu: "root"
+    property string resultMenu: ""
+    property var menuBreadcrumbs: [{id:"root",label:"Omarchy"}]
+    property var confirmationPending: null
     property string message: ""
     property string indexStatus: ""
     property bool focusPrimed: false
@@ -48,16 +53,18 @@ Item {
         var monitor = Hyprland.focusedMonitor
         targetScreen = Quickshell.screens.find(function(s) { return monitor && s.name === monitor.name }) || Quickshell.screens[0]
         message = ""; items = []; sections = []; selectedIndex = 0
+        menuId = typeof payload.menu === "string" ? payload.menu : "root"
+        menuBreadcrumbs = [{id:"root",label:"Omarchy"}]; resultMenu = ""; confirmationPending = null
         focusPrimed = false; pointerX = -1; pointerY = -1
         opened = true
-        searchField.text = typeof payload.query === "string" ? payload.query.slice(0,4096) : ""
+        searchField.text = typeof payload.query === "string" ? payload.query.slice(0,4096) : typeof payload.menu === "string" ? "> " : ""
         debounce.restart()
         if (!indexer.running) indexer.running = true
         focusTimer.restart()
         Qt.callLater(function() { searchField.forceActiveFocus(); searchField.cursorPosition = searchField.text.length })
     }
     function close() {
-        opened = false; debounce.stop(); focusTimer.stop(); queuedRefresh = false
+        opened = false; debounce.stop(); focusTimer.stop(); queuedRefresh = false; confirmationPending = null
         searchField.text = ""; items = []; sections = []; message = ""
     }
     function runQuery() {
@@ -65,12 +72,16 @@ Item {
         if (queryProcess.running) { queuedRefresh = true; return }
         queuedRefresh = false
         requestQuery = searchField.text
-        queryProcess.command = requestQuery === "" ? ["python3","-B",overview] : ["python3","-B",backend,"query",requestQuery]
+        requestMenu = menuId
+        queryProcess.command = category() === "Actions" ? ["python3","-B",backend,"menu-query",requestQuery,requestMenu] : requestQuery === "" ? ["python3","-B",overview] : ["python3","-B",backend,"query",requestQuery]
         queryProcess.running = true
     }
     function changeCategory(prefix) {
+        if (confirmationPending) return
+        menuId = "root"; resultMenu = ""; menuBreadcrumbs = [{id:"root",label:"Omarchy"}]
         var current = searchField.text.replace(/^(?:app |file |web |\?\s*|=\s*|>\s*)/i, "")
         searchField.text = prefix + current
+        debounce.restart()
         searchField.forceActiveFocus()
         searchField.cursorPosition = searchField.text.length
     }
@@ -85,8 +96,15 @@ Item {
         return "All"
     }
     function choose(index) {
-        if (actionProcess.running || searching || resultQuery !== searchField.text || index < 0 || index >= items.length) return false
+        if (confirmationPending || actionProcess.running || searching || resultQuery !== searchField.text || (category() === "Actions" && resultMenu !== menuId) || index < 0 || index >= items.length) return false
         var entry = items[index]
+        var target = Logic.menuTarget(entry)
+        if (target) { enterMenu(target); return true }
+        if (entry.kind === "menu-apps") { menuId = "root"; searchField.text = "app "; searchField.forceActiveFocus(); return true }
+        if (entry.kind === "menu-action" && entry.requiresConfirmation === true) {
+            confirmationPending = entry
+            return true
+        }
         if (entry.kind === "link") {
             var url = Logic.linkUrl(entry.value)
             if (!url) return false
@@ -94,12 +112,36 @@ Item {
             Quickshell.execDetached(["xdg-open",url])
             return true
         }
+        return dispatchEntry(entry)
+    }
+    function dispatchEntry(entry) {
+        if (actionProcess.running) return false
         keepingOpen = entry.kind === "calculator" || entry.kind === "calc"
         actionProcess.command = ["python3","-B",backend,"activate",JSON.stringify(entry)]
         message = ""
         if (!keepingOpen) opened = false
         actionProcess.running = true
         return true
+    }
+    function enterMenu(id) {
+        if (confirmationPending || actionProcess.running) return
+        menuId = id; resultMenu = ""; items = []; sections = []; selectedIndex = 0
+        searchField.text = "> "; debounce.restart(); searchField.forceActiveFocus()
+        searchField.cursorPosition = searchField.text.length
+    }
+    function backMenu() {
+        if (confirmationPending || category() !== "Actions" || menuId === "root") return
+        var previous = menuBreadcrumbs.length > 1 ? menuBreadcrumbs[menuBreadcrumbs.length-2].id : "root"
+        enterMenu(previous)
+    }
+    function dismissConfirmation() {
+        confirmationPending = null
+        if (opened) searchField.forceActiveFocus()
+    }
+    function approveConfirmation() {
+        var entry = Logic.confirmedSelection(confirmationPending, true)
+        confirmationPending = null
+        if (entry && opened) dispatchEntry(entry)
     }
     function ensureSelectionVisible() {
         for (var i=0; i<sectionRepeater.count; i++) {
@@ -123,6 +165,7 @@ Item {
         pointerX=px; pointerY=py
     }
     function iconSource(entry) {
+        if (entry.iconKind === "glyph") return ""
         if (entry.kind === "folder" || entry.value === "home") return Qt.resolvedUrl("assets/folder-blue.svg").toString()
         if (entry.kind === "ai" || entry.kind === "calculator" || entry.kind === "web") return ""
         var value = entry.value === "home" ? "folder" : String(entry.icon || "")
@@ -132,14 +175,14 @@ Item {
         return Quickshell.iconPath(value,true)
     }
     function state() {
-        return JSON.stringify({design:"compact-v3",aiSelector:true,ai:aiPicker.summary(),appsUncapped:true,rounded:true,scrollY:results.contentY,contentHeight:results.contentHeight,viewportHeight:results.height,opened:opened,query:searchField.text,resultQuery:resultQuery,category:category(),items:items,
+        return JSON.stringify({design:"compact-v3",nativeMenus:true,menu:menuId,resultMenu:resultMenu,breadcrumbs:menuBreadcrumbs,confirmationPending:confirmationPending ? {id:confirmationPending.id,title:confirmationPending.title} : null,confirmationFocused:confirmation.activeFocus,aiSelector:true,ai:aiPicker.summary(),appsUncapped:true,rounded:true,scrollY:results.contentY,contentHeight:results.contentHeight,viewportHeight:results.height,opened:opened,query:searchField.text,resultQuery:resultQuery,category:category(),items:items,
             sections:sections.map(function(s){return {title:s.title,layout:s.layout,count:s.rows.length}}),selectedIndex:selectedIndex,
             searching:searching,indexing:indexer.running,actionBusy:actionProcess.running,message:message,indexStatus:indexStatus,
             focused:searchField.activeFocus,card:{x:card.x,y:card.y,width:card.width,height:card.height}})
     }
 
     Timer { id: debounce; interval:130; onTriggered:root.runQuery() }
-    Timer { id: focusTimer; interval:80; onTriggered:{root.focusPrimed=true;searchField.forceActiveFocus()} }
+    Timer { id: focusTimer; interval:80; onTriggered:{root.focusPrimed=true;if(!root.confirmationPending)searchField.forceActiveFocus()} }
     Process {
         id: queryProcess
         stdout: StdioCollector { id:queryOutput;waitForEnd:true }
@@ -147,19 +190,20 @@ Item {
         onExited: function(code) {
             try {
                 var response=JSON.parse(queryOutput.text)
-                if (Logic.acceptResponse(response,searchField.text,root.opened)) {
+                if (root.category() === "Actions" ? Logic.acceptMenuResponse(response,searchField.text,root.opened,root.menuId) : Logic.acceptResponse(response,searchField.text,root.opened) && response.menu === undefined) {
                     var rows=response.items || []
                     if (response.query === "" || response.query === "web ") rows=rows.concat(Logic.quickLinks())
                     var layout=Logic.sectionize(rows,root.category())
                     root.items=layout.items;root.sections=layout.sections
                     root.resultQuery=response.query;root.selectedIndex=0
+                    if (root.category() === "Actions") { root.resultMenu=response.menu; root.menuBreadcrumbs=response.breadcrumbs || [{id:"root",label:"Omarchy"}] }
                     root.message=/^=\s*$/.test(response.query)?"":response.error || "";root.indexStatus=response.status || ""
                     results.contentY=0
                 }
             } catch(e) {
-                if (root.requestQuery === searchField.text && root.opened) { root.items=[];root.sections=[];root.message="Search helper unavailable. Try reopening Spotlight." }
+                if (root.requestQuery === searchField.text && root.requestMenu === root.menuId && root.opened) { root.items=[];root.sections=[];root.message="Search helper unavailable. Try reopening Spotlight." }
             }
-            if (root.opened && (root.queuedRefresh || root.requestQuery !== searchField.text)) Qt.callLater(root.runQuery)
+            if (root.opened && (root.queuedRefresh || root.requestQuery !== searchField.text || root.requestMenu !== root.menuId)) Qt.callLater(root.runQuery)
         }
     }
     Process {
@@ -189,6 +233,9 @@ Item {
         function select(index:int):void{root.selectedIndex=Math.max(0,Math.min(root.items.length-1,index));root.ensureSelectionVisible()}
         function activate(index:int):bool{return root.choose(index)}
         function category(index:int):void{if(index>=0 && index<root.categories.length)root.changeCategory(root.categories[index].prefix)}
+        function browse(menu:string):void{root.open(JSON.stringify({menu:menu}))}
+        function back():void{root.backMenu()}
+        function cancelConfirmation():void{root.dismissConfirmation()}
         function aiMenu():void{aiPicker.toggleMenu()}
         function aiSelect(provider:string):void{aiPicker.selectProvider(provider)}
         function aiEdit():void{aiPicker.openCustomEditor()}
@@ -206,7 +253,7 @@ Item {
         WlrLayershell.namespace:"omarchy-spotlight"
         WlrLayershell.layer:WlrLayer.Overlay
         WlrLayershell.keyboardFocus:root.opened?(root.focusPrimed?WlrKeyboardFocus.OnDemand:WlrKeyboardFocus.Exclusive):WlrKeyboardFocus.None
-        onBackingWindowVisibleChanged:if(backingWindowVisible)Qt.callLater(function(){searchField.forceActiveFocus()})
+        onBackingWindowVisibleChanged:if(backingWindowVisible)Qt.callLater(function(){if(!root.confirmationPending)searchField.forceActiveFocus()})
         Rectangle{anchors.fill:parent;color:"#091020";opacity:0.24}
         MouseArea{anchors.fill:parent;onPressed:root.close()}
         Rectangle{x:card.x-5;y:card.y+11;width:card.width+10;height:card.height+10;radius:22*root.uiScale;color:"#33020712"}
@@ -214,7 +261,7 @@ Item {
         Rectangle {
             id:card
             width:Math.min(780*root.uiScale,panel.width-48)
-            height:Math.min(520*root.uiScale,panel.height-64,Math.max(350*root.uiScale,header.height+footer.height+sectionColumn.implicitHeight+22*root.uiScale))
+            height:Math.min(520*root.uiScale,panel.height-64,Math.max(350*root.uiScale,header.height+footer.height+menuTrail.height+sectionColumn.implicitHeight+22*root.uiScale))
             x:Math.round((panel.width-width)/2)
             y:Math.max(32,Math.round(panel.height*0.18))
             radius:12*root.uiScale
@@ -245,7 +292,10 @@ Item {
                     onTextChanged:{root.items=[];root.sections=[];root.selectedIndex=0;root.message="";if(root.opened)debounce.restart()}
                     Keys.priority:Keys.BeforeItem
                     Keys.onPressed:function(event){
-                        if(event.key===Qt.Key_Escape){root.close();event.accepted=true}
+                        if(root.confirmationPending){if(event.key===Qt.Key_Escape)root.dismissConfirmation();event.accepted=true}
+                        else if(event.key===Qt.Key_Escape){root.close();event.accepted=true}
+                        else if(root.category()==="Actions" && ((event.key===Qt.Key_Left && (event.modifiers & Qt.AltModifier)) || (event.key===Qt.Key_Backspace && /^>\s*$/.test(searchField.text)))){root.backMenu();event.accepted=true}
+                        else if(root.category()==="Actions" && event.key===Qt.Key_Right && root.items[root.selectedIndex] && Logic.menuTarget(root.items[root.selectedIndex])){root.choose(root.selectedIndex);event.accepted=true}
                         else if((event.modifiers & Qt.ControlModifier) && event.key===Qt.Key_Comma){aiPicker.toggleMenu();event.accepted=true}
                         else if((event.modifiers & Qt.ControlModifier) && event.key>=Qt.Key_1 && event.key<=Qt.Key_7){root.changeCategory(root.categories[event.key-Qt.Key_1].prefix);event.accepted=true}
                         else if(event.key===Qt.Key_Down){root.moveSelection(1);event.accepted=true}
@@ -303,9 +353,44 @@ Item {
                 id:main
                 x:sidebar.x+sidebar.width;y:header.height+1;width:parent.width-x-1;height:parent.height-y-1
                 Rectangle{anchors.fill:parent;gradient:Gradient{orientation:Gradient.Horizontal;GradientStop{position:0;color:"#141a28"}GradientStop{position:1;color:"#101522"}}}
+                Item {
+                    id:menuTrail
+                    anchors.top:parent.top;anchors.left:parent.left;anchors.right:parent.right
+                    height:visible ? 32*root.uiScale : 0
+                    visible:root.category()==="Actions"
+                    Controls.Button {
+                        id:menuBack
+                        x:12*root.uiScale;anchors.verticalCenter:parent.verticalCenter
+                        width:26*root.uiScale;height:24*root.uiScale
+                        enabled:root.menuId!=="root" && !root.confirmationPending
+                        text:"‹";font.pixelSize:22*root.uiScale
+                        contentItem:Text{text:menuBack.text;color:menuBack.enabled?root.accent:root.muted;font:menuBack.font;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
+                        background:Rectangle{radius:5*root.uiScale;color:menuBack.hovered?"#25344e":"transparent"}
+                        Accessible.name:"Back to parent menu"
+                        Controls.ToolTip.visible:hovered;Controls.ToolTip.text:"Back · Alt+Left"
+                        onClicked:root.backMenu()
+                    }
+                    Row {
+                        x:44*root.uiScale;anchors.verticalCenter:parent.verticalCenter;spacing:4*root.uiScale
+                        Repeater {
+                            model:root.menuBreadcrumbs
+                            delegate:Controls.Button {
+                                id:crumb
+                                required property var modelData
+                                required property int index
+                                text:(index>0?"›  ":"")+modelData.label
+                                height:26*root.uiScale;implicitWidth:contentItem.implicitWidth+12*root.uiScale
+                                font.family:root.family;font.pixelSize:11*root.uiScale
+                                contentItem:Text{text:crumb.text;textFormat:Text.PlainText;color:crumb.hovered?root.accent:root.muted;font:crumb.font;verticalAlignment:Text.AlignVCenter}
+                                background:Rectangle{radius:5*root.uiScale;color:crumb.hovered?"#25344e":"transparent"}
+                                onClicked:root.enterMenu(modelData.id)
+                            }
+                        }
+                    }
+                }
                 Flickable {
                     id:results
-                    anchors{top:parent.top;left:parent.left;right:parent.right;bottom:footer.top;leftMargin:12*root.uiScale;rightMargin:12*root.uiScale;topMargin:10*root.uiScale;bottomMargin:10*root.uiScale}
+                    anchors{top:menuTrail.bottom;left:parent.left;right:parent.right;bottom:footer.top;leftMargin:12*root.uiScale;rightMargin:12*root.uiScale;topMargin:10*root.uiScale;bottomMargin:10*root.uiScale}
                     clip:true;contentWidth:width;contentHeight:sectionColumn.implicitHeight
                     boundsBehavior:Flickable.StopAtBounds
                     Controls.ScrollBar.vertical:Controls.ScrollBar{policy:Controls.ScrollBar.AsNeeded}
@@ -322,7 +407,7 @@ Item {
                                 function resultAt(index){var i=index-modelData.rows[0].index;return i>=0 && i<rowRepeater.count?rowRepeater.itemAt(i):null}
                                 Item{
                                     width:parent.width;height:18*root.uiScale
-                                    Text{x:5*root.uiScale;anchors.verticalCenter:parent.verticalCenter;text:group.modelData.title;font.family:root.family;font.pixelSize:12*root.uiScale;color:"#a5b8d8"}
+                                    Text{x:5*root.uiScale;anchors.verticalCenter:parent.verticalCenter;text:root.category()==="Actions" && root.menuBreadcrumbs.length ? root.menuBreadcrumbs[root.menuBreadcrumbs.length-1].label : group.modelData.title;textFormat:Text.PlainText;font.family:root.family;font.pixelSize:12*root.uiScale;color:"#a5b8d8"}
                                     Item{
                                         visible:root.category()==="All" && group.modelData.prefix!==""
                                         anchors.right:parent.right;anchors.verticalCenter:parent.verticalCenter;width:54*root.uiScale;height:parent.height
@@ -343,7 +428,7 @@ Item {
                                             required property var modelData
                                             row:modelData;mode:group.modelData.layout
                                             width:(resultGrid.width-(resultGrid.columns-1)*resultGrid.columnSpacing)/resultGrid.columns
-                                            height:Math.max(implicitHeight,(mode==="hero"?52:mode==="tiles"?44:38)*root.uiScale)
+                                            height:Math.max(implicitHeight,(mode==="hero"?52:mode==="tiles"?44:root.category()==="Actions"?33:38)*root.uiScale)
                                             compactOverview:root.category()==="All"
                                             scaleFactor:root.uiScale;family:root.family;home:root.home
                                             selected:root.selectedIndex===modelData.index
@@ -372,7 +457,7 @@ Item {
                     Row{
                         x:12*root.uiScale;anchors.verticalCenter:parent.verticalCenter;spacing:14*root.uiScale
                         Repeater{
-                            model:[{key:"↑↓",label:"Navigate"},{key:"↵",label:"Select"},{key:"⇥",label:"Switch tab"}]
+                            model:[{key:"↑↓",label:"Navigate"},{key:"↵",label:"Select"},root.category()==="Actions"?{key:"‹",label:"Alt+Left back"}:{key:"⇥",label:"Switch tab"}]
                             delegate:Row{
                                 required property var modelData
                                 spacing:6*root.uiScale
@@ -385,10 +470,10 @@ Item {
                         anchors.right:aiPicker.visible?aiPicker.left:parent.right;anchors.rightMargin:10*root.uiScale;anchors.verticalCenter:parent.verticalCenter
                         width:Math.max(80*root.uiScale,footer.width-(aiPicker.visible?540:330)*root.uiScale)
                         horizontalAlignment:Text.AlignRight;elide:Text.ElideRight;textFormat:Text.PlainText
-                        text:root.message || (root.category()==="Apps"?root.indexStatus:indexer.running?"Indexing…":root.category()==="Files"?root.indexStatus:"")
+                        text:root.message || (root.category()==="Apps" || root.category()==="Actions"?root.indexStatus:indexer.running?"Indexing…":root.category()==="Files"?root.indexStatus:"")
                         font.family:root.family;font.pixelSize:10*root.uiScale;color:root.message?root.accent:"#8a9ab9"
                         MouseArea{id:statusHover;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.NoButton}
-                        Controls.ToolTip.visible:statusHover.containsMouse && (root.message!=="" || root.indexStatus!=="Ready")
+                        Controls.ToolTip.visible:statusHover.containsMouse && Logic.statusTooltipUseful(root.message,root.indexStatus)
                         Controls.ToolTip.text:root.message || root.indexStatus
                     }
                     AiPicker {
@@ -401,6 +486,14 @@ Item {
                         onRestoreSearchFocus:if(root.opened)searchField.forceActiveFocus()
                     }
                 }
+            }
+            MenuConfirmation {
+                id:confirmation
+                anchors.fill:parent;z:50
+                entry:root.confirmationPending
+                scaleFactor:root.uiScale;family:root.family
+                onDismissed:root.dismissConfirmation()
+                onApproved:root.approveConfirmation()
             }
         }
         Rectangle{x:card.x;y:card.y;width:card.width;height:card.height;radius:card.radius;color:"transparent";border.width:1;border.color:"#536589"}

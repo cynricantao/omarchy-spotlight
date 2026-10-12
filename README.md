@@ -15,6 +15,8 @@ A compact native launcher for Omarchy Quattro: **Search or Ask** from one keyboa
 - Choose Omarchy's default agent, Hermes, Codex, Claude Code, Gemini CLI, OpenCode, or a trusted custom CLI.
 - Search the web or open fixed YouTube/GitHub/Google shortcuts on explicit selection.
 - Compact icon rail, category tooltips, grouped results and keyboard navigation.
+- Browse and search the complete installed Omarchy menu from **Actions**: Apps, Learn, Trigger, Style, Setup, Install, Remove, Update, About and System, including nested submenus.
+- Native breadcrumbs, Back navigation, source icons, conditional availability, current-setting checkmarks and confirmation before disruptive actions.
 
 This is an independent community plugin, not an official Omarchy or AI-provider product.
 
@@ -62,6 +64,36 @@ No installer writes keyboard bindings or replaces your desktop configuration aut
 
 ## Use
 
+### 1. Open Spotlight
+
+Click the **magnifying-glass search button** in the bar. If you configured the optional shortcut above, you can also press **Alt+Space**. The search field shows **Search or Ask**.
+
+You can open the published plugin from a terminal too:
+
+```sh
+omarchy-shell shell summon io.github.cynricantao.spotlight '{}'
+```
+
+The command uses the published plugin ID. An older local prototype may use a different ID; use the ID from that prototype's `manifest.json` rather than enabling a second copy accidentally.
+
+### 2. Search or choose a category
+
+Type in the search field, click an icon in the left rail, or use a category shortcut. Hover over an icon to see its name and shortcut.
+
+| Shortcut | Category | What it does |
+|---|---|---|
+| **Ctrl+1** | All | Mixed results and home suggestions |
+| **Ctrl+2** | Apps | Search the complete installed application catalog |
+| **Ctrl+3** | Files | Search indexed file and folder names |
+| **Ctrl+4** | Web | Search the web on explicit selection |
+| **Ctrl+5** | AI | Ask your selected AI CLI in a terminal |
+| **Ctrl+6** | Calculate | Calculate locally |
+| **Ctrl+7** | Actions | Browse and search the full Omarchy menu |
+
+**Up/Down** selects a result; **Enter** or clicking the result activates it. App results launch the app, file/folder results open it, and calculator results copy the answer. **Escape** closes Spotlight. **Tab / Shift+Tab** cycles categories.
+
+You can also select a route by typing a prefix:
+
 | Input | Behavior |
 |---|---|
 | `explain DNS` | Ask AI is the default result; matching local items and Web remain alternatives |
@@ -70,18 +102,69 @@ No installer writes keyboard bindings or replaces your desktop configuration aut
 | `web linux news` | Search DuckDuckGo in the default browser |
 | `? explain DNS` | Explicit AI query |
 | `= (42 + 8) / 2` | Local calculator; Enter copies the answer |
-| `> screenshot` | Search curated desktop actions |
+| `>` | Browse the full Omarchy menu without leaving Spotlight |
+| `> screenshot` | Search Omarchy menu actions, labels, aliases and breadcrumb paths |
 
-- **Up/Down:** select a result; the results view scrolls to keep it visible.
-- **Enter:** activate the selected result. No AI or web action happens merely from typing.
-- **Escape:** close.
-- **Tab / Shift+Tab:** switch categories.
-- **Ctrl+1…7:** All, Apps, Files, Web, AI, Calculate, Actions.
-- **Ctrl+Enter:** change the query to AI mode; Enter again submits it.
-- **Alt+Enter:** change the query to Web mode; Enter again opens the search.
-- **Ctrl+,** or the footer's **AI** button: choose the CLI used by Spotlight.
+**Important:** ordinary non-math text selects Ask AI first, even when local matches exist. Use the Apps/Files categories or their prefixes when you want a local result. Nothing is sent to AI or the web merely from typing; selecting that result is what starts the external action.
+
+### 3. Use the full Omarchy menu
+
+1. Open Spotlight and press **Ctrl+7**, click the **lightning-bolt Actions icon**, or type `>`. Categories preserve your search terms; clear any text after `>` to browse the unfiltered menu.
+2. You will see **Apps, Learn, Trigger, Style, Setup, Install, Remove, Update, About and System**.
+3. Select a category with **Up/Down**, then press **Enter** or click it. Submenus stay inside Spotlight; their rows show a chevron. **Right** also opens regular submenu rows. Apps opens Spotlight's complete application catalog.
+4. Keep opening submenus until you reach the command you want. Longer lists scroll; keyboard selection keeps the selected row in view.
+5. To go back, press **Alt+Left**, click the **Back arrow**, or press **Backspace** when the Actions query contains only `>` and spaces. Click a breadcrumb to jump directly to that ancestor.
+6. To search, type after `>`, for example `> screenshot`. Search is scoped to the current submenu. Click the **Go** root breadcrumb first when you want to search the whole menu.
+7. Selecting an Omarchy command opens a confirmation. **Cancel is focused initially**, so another Enter cancels rather than running the command. Click **Continue**, or move focus to Continue with Tab and press Enter, only when you intend to run it. Escape cancels the confirmation.
+
+Examples of menu paths:
+
+| Task | Path inside Actions |
+|---|---|
+| Read the Omarchy manual | **Learn → Omarchy** |
+| Take a screenshot | **Trigger → Capture → Screenshot** |
+| Choose a font | **Style → Font → your chosen font**; a checkmark identifies the current font |
+| Edit monitor configuration | **Setup → Monitors** |
+| Set the default browser | **Setup → Defaults → Browser → an available browser** |
+| Install a browser | **Install → Browser → an available choice** |
+| Refresh a default configuration | **Update → Config → the configuration**; this resets that configuration, so review before continuing |
+| Shut down the computer | **System → Shutdown**; Continue performs the real shutdown |
+
+All Omarchy command leaves currently require confirmation, including informational commands. Normal app/file/calculator/web/AI results keep their existing activation behavior. Package installation/removal, system updates, resets and power commands are **real operations**, not previews. Their own Omarchy tools may ask for more input, authentication or confirmation after Spotlight hands off.
+
+The original Omarchy menu and shortcuts remain available as fallbacks. Installing Spotlight does not automatically replace the built-in menu button or Super+Space binding.
+
+### 4. Choose an AI CLI
+
+Click **AI** in the footer, or press **Ctrl+,**, then select an available CLI. **Omarchy default** follows the system's default agent; another selection changes Spotlight only. See [AI settings](#ai-settings) and [AI setup](AI-SETUP.md) for setup details.
+
+To change the current query to AI mode, press **Ctrl+Enter**; press Enter again to submit it. **Alt+Enter** changes it to Web mode; press Enter again to open the search. These shortcuts do not send the query on their first press.
+
+### If something is missing or does not open
+
+- **Alt+Space does nothing:** use the bar search button and check the [optional shortcut setup](#optional-alt--space-shortcut). The installer does not assign the shortcut automatically.
+- **The new Actions menu is missing:** update an existing published installation with `omarchy plugin update io.github.cynricantao.spotlight`, then reopen Spotlight and press Ctrl+7.
+- **A menu choice is missing:** availability depends on installed packages and hardware, just like the standard Omarchy menu. An already-installed application may be absent from Install and present under Remove instead.
+- **An action reports that it changed or became unavailable:** reopen/reselect the result. Spotlight rechecks the definition before execution; old confirmation is not reused for a changed action.
+- **No file match:** Files searches indexed names, not document contents. Check the Files footer for indexing progress, coverage or truncation; the index is intentionally bounded.
+- **AI is unavailable:** install and configure a supported CLI separately, then select it in the AI footer. Spotlight does not install agents or sign into accounts for you.
+- **Menu-definition/provider error:** review the displayed error and your `~/.config/omarchy/extensions/omarchy-menu.jsonc`. Malformed extensions and unsupported providers are reported, not silently replaced with invented results.
 
 The default home view contains actual installed applications and existing indexed folders. It is not a recent-activity feed and does not invent recency timestamps.
+
+### Omarchy menu coverage
+
+![Native Omarchy menu inside the compact Spotlight panel](menu-preview.png)
+
+*Real native capture of the default root menu; no personal files, prompts or account details are shown.*
+
+Spotlight reads Omarchy's installed `default/omarchy/omarchy-menu.jsonc` and merges your `~/.config/omarchy/extensions/omarchy-menu.jsonc` overrides, matching the standard menu's extension path. It does not bundle a stale copy of the menu or publish your personal extensions. Menu definitions are re-read for queries and activation, so upstream additions and your extensions remain accessible without editing Spotlight. Apps uses the existing complete application catalog; runtime font choices are loaded from Omarchy.
+
+Menu navigation stays in the compact Spotlight panel. Leaf actions use the same Omarchy tools as the standard menu, including their interactive package pickers, configuration editors, authentication and setup dialogs. Spotlight replaces the menu navigation; it does not reimplement those system tools or bypass their own confirmations. Hardware/package conditions can hide entries that do not apply to this computer, just as the standard menu does. Unavailable definitions, malformed extensions, guard failures and unsupported providers are reported rather than disguised as complete results.
+
+Install/removal/update, reset, security/network/boot and power actions require confirmation where applicable. Activation resolves the ID against the current trusted definition, checks availability again and rejects a changed action token rather than executing a command supplied by a result payload. Browsing does not install software, alter networking, reset configuration or run a power action.
+
+Opening Actions does **not** replace the standard Omarchy widget or Super+Space binding automatically. Both can remain as fallbacks; existing Spotlight shortcuts and the seven-category rail are unchanged.
 
 ## AI settings
 
@@ -94,6 +177,7 @@ See [AI setup](AI-SETUP.md) for custom argv templates and supported interactive 
 ## Privacy and limits
 
 - Search, arithmetic and filename indexing are local. There is no plugin telemetry or automatic AI/web request while typing.
+- Menu availability/checkmark discovery evaluates local shell conditions from the trusted installed menu and your own extensions. These are unsandboxed trusted code, not search text; review extensions before adding them. Selecting a leaf action can launch system tools or network operations.
 - Selecting Web sends that query to the search engine. Selecting AI hands the query to the chosen CLI, whose own provider, tools, logs and privacy settings apply.
 - The plugin stores no query history. Prompts passed to a CLI can appear in the local process argument list; do not put secrets in queries or custom argv configuration.
 - File matching is by **filename/folder name**, not file contents or semantic search. Hidden files, symlinks and common generated/dependency directories are excluded.
@@ -124,6 +208,7 @@ Remove your optional keybinding separately, then reload and check Hyprland. AI s
 ```sh
 python3 -B -W error::ResourceWarning -m unittest discover -p 'test_*.py' -v
 node test_logic.cjs
+node test_menu_logic.cjs
 omarchy plugin validate .
 ```
 
