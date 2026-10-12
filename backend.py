@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native Spotlight backend. JSON only; no shell execution or query history."""
+"""Native Spotlight backend. JSON only; no query-sourced commands or history."""
 import ast
 import configparser
 from contextlib import contextmanager
@@ -32,7 +32,7 @@ def item(kind, title, subtitle, value, icon='', identifier=None):
 
 def quick_actions():
     return [item('action', 'Open home folder', 'File manager', 'home', 'user-home'),
-            item('action', 'Desktop settings', 'Open Omarchy setup', 'settings', 'preferences-system'),
+            item('menu', 'Omarchy menu', 'Browse all desktop actions', 'root', 'preferences-system', 'omarchy:root'),
             item('action', 'Take a screenshot', 'Select a region and copy', 'screenshot', 'camera-photo')]
 
 
@@ -371,9 +371,11 @@ def action_argv(selected):
         return ai_settings.launch_argv(value, default_agent=default_agent)
     if kind == 'web':
         return ['xdg-open', 'https://duckduckgo.com/?' + urlencode({'q': value})]
+    if kind == 'menu-action':
+        import omarchy_menu
+        return omarchy_menu.action_argv(selected)
     if kind == 'action':
         actions = {'home': ['xdg-open', str(Path.home())],
-                   'settings': ['omarchy', 'menu', 'summon', 'setup'],
                    'screenshot': ['omarchy', 'capture', 'screenshot', 'region', 'copy']}
         if value in actions and selected.get('id') == 'action:' + value:
             return actions[value]
@@ -435,10 +437,8 @@ def query(text):
         result['items'] = [item('web', 'Search web', value, value, 'web-browser')] if value.strip() else []
         return result
     if text.startswith('>'):
-        words = text[1:].casefold().split()
-        result['items'] = [x for x in quick_actions()
-                           if all(w in (x['title'] + ' ' + x['subtitle']).casefold() for w in words)]
-        return result
+        import omarchy_menu
+        return omarchy_menu.menu_query(original, 'root')
     explicit = text.lstrip().startswith('=')
     expression = text.lstrip()[1:].strip() if explicit else text.strip()
     if expression or explicit:
@@ -470,6 +470,9 @@ def main(argv=None):
     try:
         if len(args) == 2 and args[0] == 'query':
             result = query(args[1])
+        elif len(args) == 3 and args[0] == 'menu-query':
+            import omarchy_menu
+            result = omarchy_menu.menu_query(args[1], args[2])
         elif len(args) == 2 and args[0] == 'activate':
             try:
                 result = activate(json.loads(args[1]))
@@ -478,11 +481,13 @@ def main(argv=None):
         elif args in (['index'], ['index', '--force']):
             result = build_index(force='--force' in args)
         else:
-            result = {'ok': False, 'error': 'Usage: backend.py query <query> | index [--force] | activate <JSON item>'}
+            result = {'ok': False, 'error': 'Usage: backend.py query <query> | menu-query <query> <menu> | index [--force] | activate <JSON item>'}
     except Exception:
-        if args and args[0] == 'query':
+        if args and args[0] in ('query', 'menu-query'):
             result = {'query': args[1] if len(args) > 1 else '', 'items': [],
                       'status': 'Unavailable', 'error': 'Unable to complete this query'}
+            if args[0] == 'menu-query':
+                result.update(menu=args[2] if len(args) > 2 else 'root', breadcrumbs=[])
         else:
             result = {'ok': False, 'status': 'error', 'error': 'Unable to complete this operation'}
     print(json.dumps(result, ensure_ascii=True))
